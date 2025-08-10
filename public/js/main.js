@@ -257,7 +257,7 @@ function renderNoteCard(note) {
   const groupName = group ? group.name : '';
   const groupColor = group ? group.color : '#64748b';
 
-  div.className = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-4 shadow-sm';
+  div.className = 'note-card rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-4 shadow-sm';
   div.innerHTML = `
     <div class="flex items-start gap-3">
       <input type="checkbox" class="mt-1 h-4 w-4 note-select" data-id="${note._id}" ${state.selected.has(idOf(note)) ? 'checked' : ''} />
@@ -266,19 +266,24 @@ function renderNoteCard(note) {
           <h3 class="font-semibold ${isDone ? 'line-through opacity-70' : ''}">${escapeHtml(note.title || '')}</h3>
           <div class="flex items-center gap-1">
             ${groupName ? `<span class="chip" style="background:transparent;border:1px solid ${groupColor};color:${groupColor}">${escapeHtml(groupName)}</span>` : ''}
-            ${isDone ? '<span class="chip">Done</span>' : ''}
+            ${isDone ? '<span class="chip">✓</span>' : ''}
           </div>
         </div>
         <div class="prose prose-sm dark:prose-invert max-w-none mt-2">${note.content || ''}</div>
-        <div class="mt-3 flex flex-wrap items-center gap-2">
-          ${isDeleted ? `
-            <button class="btn btn-soft btn-restore" data-id="${note._id}">Restore</button>
-            <button class="btn btn-soft btn-delete-perm" data-id="${note._id}">Delete Forever</button>
-          ` : `
-            <button class="btn btn-soft btn-done" data-id="${note._id}">${isDone ? 'Mark Undone' : 'Mark Done'}</button>
-            <button class="btn btn-soft btn-edit" data-id="${note._id}">Edit</button>
-            <button class="btn btn-soft btn-delete" data-id="${note._id}">Delete</button>
-          `}
+        <div class="mt-3 flex items-center justify-between">
+          <div class="flex items-center gap-1">
+            ${isDeleted ? `
+              <button class="btn-icon btn-restore" data-id="${note._id}" title="Restore">↩</button>
+              <button class="btn-icon btn-delete-perm" data-id="${note._id}" title="Delete Forever">🗑</button>
+            ` : `
+              <button class="btn-icon btn-done" data-id="${note._id}" title="${isDone ? 'Mark Undone' : 'Mark Done'}">${isDone ? '↶' : '✓'}</button>
+              <button class="btn-icon btn-edit" data-id="${note._id}" title="Edit">✏</button>
+              <button class="btn-icon btn-delete" data-id="${note._id}" title="Delete">🗑</button>
+            `}
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">
+            ${new Date(note.createdAt || note.updatedAt).toLocaleDateString()}
+          </div>
         </div>
       </div>
     </div>
