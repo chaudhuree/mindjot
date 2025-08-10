@@ -51,6 +51,11 @@ const els = {
   createGroupBtn: $('#create-group-btn'),
   themeIcon: $('#theme-icon-path'),
   themeIconM: $('#theme-icon-path-m'),
+  // Delete group modal elements
+  deleteGroupModal: $('#delete-group-modal'),
+  deleteGroupName: $('#delete-group-name'),
+  confirmDeleteGroup: $('#confirm-delete-group'),
+  cancelDeleteGroup: $('#cancel-delete-group'),
 };
 
 // Theme
@@ -270,19 +275,73 @@ function addGroupDeleteListeners(container) {
       const group = state.groups.find(g => g._id === groupId);
       if (!group) return;
       
-      if (confirm(`Delete group "${group.name}" and all its notes? This cannot be undone.`)) {
-        try {
-          await api(`/api/groups/${groupId}`, { method: 'DELETE' });
-          loadGroups();
-          loadNotes();
-        } catch (err) {
-          alert('Delete group failed: ' + (err?.message || err));
-          console.error(err);
-        }
-      }
+      // Show custom delete confirmation modal
+      showDeleteGroupModal(group);
     });
   });
 }
+
+// Delete group modal functionality
+let currentGroupToDelete = null;
+
+function showDeleteGroupModal(group) {
+  currentGroupToDelete = group;
+  els.deleteGroupName.textContent = group.name;
+  els.deleteGroupModal?.classList.remove('hidden');
+}
+
+function hideDeleteGroupModal() {
+  els.deleteGroupModal?.classList.add('hidden');
+  currentGroupToDelete = null;
+}
+
+// Delete group modal event listeners
+els.cancelDeleteGroup?.addEventListener('click', hideDeleteGroupModal);
+els.deleteGroupModal?.addEventListener('click', (e) => {
+  if (e.target === els.deleteGroupModal) hideDeleteGroupModal();
+});
+
+els.confirmDeleteGroup?.addEventListener('click', async () => {
+  if (!currentGroupToDelete) return;
+  
+  const groupId = currentGroupToDelete._id;
+  els.confirmDeleteGroup.disabled = true;
+  els.confirmDeleteGroup.textContent = 'Deleting...';
+  
+  try {
+    // First, get all notes in this group
+    const { data: groupNotes } = await api(`/api/notes?groupId=${groupId}`);
+    
+    // Delete all notes in the group first
+    if (groupNotes && groupNotes.length > 0) {
+      const noteIds = groupNotes.map(note => note._id);
+      await api('/api/notes/batch', { 
+        method: 'POST', 
+        body: { action: 'permanent-delete', ids: noteIds } 
+      });
+    }
+    
+    // Then delete the group
+    await api(`/api/groups/${groupId}`, { method: 'DELETE' });
+    
+    // Refresh the UI
+    hideDeleteGroupModal();
+    loadGroups();
+    loadNotes();
+    
+    // Emit socket event for real-time updates
+    const payload = { type: 'group-deleted', groupId };
+    console.log('emitting client:groups:changed', payload);
+    window.__emitNotesChanged?.(payload);
+    
+  } catch (err) {
+    console.error('Delete group error:', err);
+    alert('Delete group failed: ' + (err?.message || err));
+  } finally {
+    els.confirmDeleteGroup.disabled = false;
+    els.confirmDeleteGroup.textContent = 'Delete Group';
+  }
+});
 
 function fillGroupSelects() {
   const options = ['<option value="">No group</option>']
@@ -354,7 +413,7 @@ els.groupListMobile?.addEventListener('click', (e) => {
   closeMobileDrawer();
 });
 
-// This functionality is now handled by the modal above
+// Mobile group list event listeners are handled above
 
 function setFilter(f) {
   state.filter = f;

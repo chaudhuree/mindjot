@@ -122,8 +122,8 @@ const build = async () => {
     if (!Object.keys(update).length) return reply.code(400).send({ ok: false, message: 'no fields' });
     update.updatedAt = new Date();
     const res = await groups.findOneAndUpdate({ _id: new ObjectId(id) }, { $set: update }, { returnDocument: 'after' });
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'group not found' });
-    const sg = serializeGroup(res.value);
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'group not found' });
+    const sg = serializeGroup(res);
     app.io.emit('groups:changed', { type: 'updated', group: sg });
     return { ok: true, data: sg };
   });
@@ -136,7 +136,7 @@ const build = async () => {
     const countNotes = await notes.countDocuments({ groupId: gid, isDeleted: { $ne: true } });
     if (countNotes > 0) return reply.code(400).send({ ok: false, message: 'Group has notes. Move or delete notes first.' });
     const res = await groups.findOneAndDelete({ _id: gid });
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'group not found' });
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'group not found' });
     app.io.emit('groups:changed', { type: 'deleted', id });
     return { ok: true };
   });
