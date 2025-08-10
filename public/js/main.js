@@ -366,8 +366,9 @@ function renderNoteCard(note) {
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      await api(`/api/notes/${idOf(note)}/permanent`, { method: 'DELETE' });
-      const payload4 = { type: 'permanently-deleted', id: idOf(note) };
+      const noteId = idOf(note);
+      await api(`/api/notes/${noteId}/permanent`, { method: 'DELETE' });
+      const payload4 = { type: 'permanently-deleted', id: noteId };
       console.log('emitting client:notes:changed', payload4);
       window.__emitNotesChanged?.(payload4);
       loadNotes();
@@ -408,7 +409,7 @@ function updateToolbar() {
     wrap.appendChild(restoreBtn);
     // Permanent delete
     const deleteBtn = button('Delete Forever', async () => {
-      if (!confirm('Permanently delete selected notes?')) return;
+      // if (!confirm('Permanently delete selected notes?')) return;
       await batch('permanent-delete');
     });
     deleteBtn.disabled = !any;
@@ -417,7 +418,18 @@ function updateToolbar() {
     const emptyBtn = button('Empty Recycle Bin', async () => {
       if (!confirm('Empty recycle bin? This cannot be undone.')) return;
       const ids = state.notes.map(n => idOf(n));
-      if (ids.length) await api('/api/notes/batch', { method: 'POST', body: { action: 'permanent-delete', ids } });
+      if (ids.length) {
+        try {
+          await api('/api/notes/batch', { method: 'POST', body: { action: 'permanent-delete', ids } });
+          const payload = { type: 'permanently-deleted-batch', ids };
+          console.log('emitting client:notes:changed', payload);
+          window.__emitNotesChanged?.(payload);
+          loadNotes();
+        } catch (err) {
+          alert('Empty recycle bin failed: ' + (err?.message || err));
+          console.error(err);
+        }
+      }
     });
     wrap.appendChild(emptyBtn);
   } else {
