@@ -244,8 +244,14 @@ function renderNoteCard(note) {
       await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { isDone: !isDone } });
       loadNotes();
     } catch (err) {
-      alert('Mark done failed: ' + (err?.message || err));
-      console.error(err);
+      const msg = String(err?.message || err);
+      if (msg.includes('note not found')) {
+        // Treat as already updated (stale UI)
+        loadNotes();
+      } else {
+        alert('Mark done failed: ' + msg);
+        console.error(err);
+      }
     } finally {
       btn.disabled = false;
     }
