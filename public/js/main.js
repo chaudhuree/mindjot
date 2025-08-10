@@ -80,10 +80,12 @@ $$('[data-editcmd]').forEach(btn => {
 
 // API helper
 async function api(path, opts = {}) {
+  const hasBody = opts.body !== undefined && opts.body !== null;
+  const jsonHeaders = hasBody ? { 'Content-Type': 'application/json' } : {};
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    headers: { ...(opts.headers || {}), ...jsonHeaders },
+    body: hasBody ? JSON.stringify(opts.body) : undefined,
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -235,19 +237,77 @@ function renderNoteCard(note) {
     updateToolbar();
   });
 
-  $('.btn-done', div)?.addEventListener('click', async () => {
-    await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { isDone: !isDone } });
+  $('.btn-done', div)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { isDone: !isDone } });
+      loadNotes();
+    } catch (err) {
+      alert('Mark done failed: ' + (err?.message || err));
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+    }
   });
   $('.btn-edit', div)?.addEventListener('click', () => openEditModal(note));
-  $('.btn-delete', div)?.addEventListener('click', async () => {
-    await api(`/api/notes/${idOf(note)}`, { method: 'DELETE' });
+  $('.btn-delete', div)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api(`/api/notes/${idOf(note)}`, { method: 'DELETE' });
+      loadNotes();
+    } catch (err) {
+      const msg = String(err?.message || err);
+      // If backend says note not found, treat as already deleted
+      if (msg.includes('note not found')) {
+        loadNotes();
+      } else {
+        alert('Delete failed: ' + msg);
+        console.error(err);
+      }
+    } finally {
+      btn.disabled = false;
+    }
   });
-  $('.btn-restore', div)?.addEventListener('click', async () => {
-    await api(`/api/notes/${idOf(note)}/restore`, { method: 'POST' });
+  $('.btn-restore', div)?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api(`/api/notes/${idOf(note)}/restore`, { method: 'POST' });
+      loadNotes();
+    } catch (err) {
+      const msg = String(err?.message || err);
+      // If backend says note not found, treat as already restored
+      if (msg.includes('note not found')) {
+        loadNotes();
+      } else {
+        alert('Restore failed: ' + msg);
+        console.error(err);
+      }
+    } finally {
+      btn.disabled = false;
+    }
   });
-  $('.btn-delete-perm', div)?.addEventListener('click', async () => {
+  $('.btn-delete-perm', div)?.addEventListener('click', async (e) => {
     if (!confirm('Permanently delete this note? This cannot be undone.')) return;
-    await api(`/api/notes/${idOf(note)}/permanent`, { method: 'DELETE' });
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api(`/api/notes/${idOf(note)}/permanent`, { method: 'DELETE' });
+      loadNotes();
+    } catch (err) {
+      const msg = String(err?.message || err);
+      // If backend says note not found, treat as already deleted
+      if (msg.includes('note not found')) {
+        loadNotes();
+      } else {
+        alert('Permanent delete failed: ' + msg);
+        console.error(err);
+      }
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   return div;
@@ -313,9 +373,16 @@ function button(label, onClick) {
 async function batch(action) {
   const ids = Array.from(state.selected);
   if (!ids.length) return;
-  await api('/api/notes/batch', { method: 'POST', body: { action, ids } });
-  state.selected.clear();
-  els.selectAll.checked = false;
+  try {
+    await api('/api/notes/batch', { method: 'POST', body: { action, ids } });
+  } catch (err) {
+    alert('Batch action failed: ' + (err?.message || err));
+    console.error(err);
+  } finally {
+    state.selected.clear();
+    els.selectAll.checked = false;
+    loadNotes();
+  }
 }
 
 // Search
@@ -330,9 +397,15 @@ els.createNote?.addEventListener('click', async () => {
   const content = els.editor.innerHTML.trim();
   const groupId = els.noteGroup.value || undefined;
   if (!title) return;
-  await api('/api/notes', { method: 'POST', body: { title, content, groupId } });
-  els.noteTitle.value = '';
-  els.editor.innerHTML = '';
+  try {
+    await api('/api/notes', { method: 'POST', body: { title, content, groupId } });
+    els.noteTitle.value = '';
+    els.editor.innerHTML = '';
+    loadNotes();
+  } catch (err) {
+    alert('Create note failed: ' + (err?.message || err));
+    console.error(err);
+  }
 });
 
 // Add group
@@ -354,8 +427,14 @@ function openEditModal(note) {
     const title = els.editTitle.value.trim();
     const content = els.editEditor.innerHTML.trim();
     const groupId = els.editGroup.value || null;
-    await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { title, content, groupId } });
-    closeEditModal();
+    try {
+      await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { title, content, groupId } });
+      closeEditModal();
+      loadNotes();
+    } catch (err) {
+      alert('Save failed: ' + (err?.message || err));
+      console.error(err);
+    }
   };
 }
 

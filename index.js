@@ -199,13 +199,15 @@ const build = async () => {
     const { id } = req.params;
     const { ObjectId } = app.mongo;
     const now = new Date();
+    let oid;
+    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
     const res = await notes.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: oid },
       { $set: { isDeleted: true, deletedAt: now, updatedAt: now } },
       { returnDocument: 'after' }
     );
     if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
-    app.io.emit('notes:changed', { type: 'soft-deleted', id });
+    app.io?.emit('notes:changed', { type: 'soft-deleted', id });
     return { ok: true };
   });
 
@@ -214,14 +216,16 @@ const build = async () => {
     const { notes } = getCollections();
     const { id } = req.params;
     const { ObjectId } = app.mongo;
+    let oid;
+    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
     const res = await notes.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: oid },
       { $set: { isDeleted: false, deletedAt: null, updatedAt: new Date() } },
       { returnDocument: 'after' }
     );
     if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
     const sn = serializeNote(res.value);
-    app.io.emit('notes:changed', { type: 'restored', note: sn });
+    app.io?.emit('notes:changed', { type: 'restored', note: sn });
     return { ok: true };
   });
 
@@ -230,9 +234,11 @@ const build = async () => {
     const { notes } = getCollections();
     const { id } = req.params;
     const { ObjectId } = app.mongo;
-    const res = await notes.findOneAndDelete({ _id: new ObjectId(id) });
+    let oid;
+    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
+    const res = await notes.findOneAndDelete({ _id: oid });
     if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
-    app.io.emit('notes:changed', { type: 'permanently-deleted', id });
+    app.io?.emit('notes:changed', { type: 'permanently-deleted', id });
     return { ok: true };
   });
 
@@ -251,23 +257,23 @@ const build = async () => {
     switch (action) {
       case 'soft-delete':
         res = await notes.updateMany({ _id: { $in: _ids } }, { $set: { isDeleted: true, deletedAt: now, updatedAt: now } });
-        app.io.emit('notes:changed', { type: 'soft-deleted-batch', ids });
+        app.io?.emit('notes:changed', { type: 'soft-deleted-batch', ids });
         break;
       case 'restore':
         res = await notes.updateMany({ _id: { $in: _ids } }, { $set: { isDeleted: false, deletedAt: null, updatedAt: now } });
-        app.io.emit('notes:changed', { type: 'restored-batch', ids });
+        app.io?.emit('notes:changed', { type: 'restored-batch', ids });
         break;
       case 'permanent-delete':
         res = await notes.deleteMany({ _id: { $in: _ids } });
-        app.io.emit('notes:changed', { type: 'permanently-deleted-batch', ids });
+        app.io?.emit('notes:changed', { type: 'permanently-deleted-batch', ids });
         break;
       case 'mark-done':
         res = await notes.updateMany({ _id: { $in: _ids } }, { $set: { isDone: true, updatedAt: now } });
-        app.io.emit('notes:changed', { type: 'updated-batch', ids, patch: { isDone: true } });
+        app.io?.emit('notes:changed', { type: 'updated-batch', ids, patch: { isDone: true } });
         break;
       case 'mark-undone':
         res = await notes.updateMany({ _id: { $in: _ids } }, { $set: { isDone: false, updatedAt: now } });
-        app.io.emit('notes:changed', { type: 'updated-batch', ids, patch: { isDone: false } });
+        app.io?.emit('notes:changed', { type: 'updated-batch', ids, patch: { isDone: false } });
         break;
       default:
         return reply.code(400).send({ ok: false, message: 'unknown action' });
