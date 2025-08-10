@@ -45,6 +45,12 @@ const els = {
   filtersMobile: $('#filters-mobile'),
   addGroupMobile: $('#add-group-mobile'),
   groupListMobile: $('#group-list-mobile'),
+  // Group modal elements
+  addGroupModal: $('#add-group-modal'),
+  groupNameInput: $('#group-name-input'),
+  createGroupBtn: $('#create-group-btn'),
+  themeIcon: $('#theme-icon-path'),
+  themeIconM: $('#theme-icon-path-m'),
 };
 
 // Theme
@@ -54,7 +60,20 @@ function setTheme(mode) {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
     document.documentElement.classList.toggle('dark', isDark);
+    updateThemeIcons(isDark);
   } catch {}
+}
+
+function updateThemeIcons(isDark) {
+  const moonPath = 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z';
+  const sunPath = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z';
+  
+  if (els.themeIcon) {
+    els.themeIcon.setAttribute('d', isDark ? sunPath : moonPath);
+  }
+  if (els.themeIconM) {
+    els.themeIconM.setAttribute('d', isDark ? sunPath : moonPath);
+  }
 }
 
 function toggleTheme() {
@@ -65,6 +84,14 @@ function toggleTheme() {
 
 els.themeToggle?.addEventListener('click', toggleTheme);
 els.themeToggleM?.addEventListener('click', toggleTheme);
+
+// Initialize theme icons
+document.addEventListener('DOMContentLoaded', () => {
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = localStorage.getItem('theme') || 'system';
+  const isDark = theme === 'dark' || (theme === 'system' && prefersDark);
+  updateThemeIcons(isDark);
+});
 
 // Mobile drawer functionality
 let isDrawerOpen = false;
@@ -210,15 +237,51 @@ async function loadGroups() {
 
 function renderGroups() {
   const groupHTML = state.groups.map(g => 
-    `<button data-group="${g._id}" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2">
-      <div class="h-3 w-3 rounded-full" style="background:${g.color}"></div>
-      ${escapeHtml(g.name)}
-    </button>`
+    `<div class="group-item">
+      <button data-group="${g._id}" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2">
+        <div class="h-3 w-3 rounded-full" style="background:${g.color}"></div>
+        ${escapeHtml(g.name)}
+      </button>
+      <button class="group-delete-btn" data-group-id="${g._id}" title="Delete Group">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+      </button>
+    </div>`
   ).join('');
   
-  if (els.groupList) els.groupList.innerHTML = groupHTML;
-  if (els.groupListMobile) els.groupListMobile.innerHTML = groupHTML;
+  if (els.groupList) {
+    els.groupList.innerHTML = groupHTML;
+    addGroupDeleteListeners(els.groupList);
+  }
+  if (els.groupListMobile) {
+    els.groupListMobile.innerHTML = groupHTML;
+    addGroupDeleteListeners(els.groupListMobile);
+  }
   fillGroupSelects();
+}
+
+function addGroupDeleteListeners(container) {
+  container.querySelectorAll('.group-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const groupId = btn.getAttribute('data-group-id');
+      const group = state.groups.find(g => g._id === groupId);
+      if (!group) return;
+      
+      if (confirm(`Delete group "${group.name}" and all its notes? This cannot be undone.`)) {
+        try {
+          await api(`/api/groups/${groupId}`, { method: 'DELETE' });
+          loadGroups();
+          loadNotes();
+        } catch (err) {
+          alert('Delete group failed: ' + (err?.message || err));
+          console.error(err);
+        }
+      }
+    });
+  });
 }
 
 function fillGroupSelects() {
@@ -291,19 +354,7 @@ els.groupListMobile?.addEventListener('click', (e) => {
   closeMobileDrawer();
 });
 
-// Mobile add group
-els.addGroupMobile?.addEventListener('click', async () => {
-  const name = prompt('Group name');
-  if (!name) return;
-  const color = prompt('Optional color hex (e.g., #10b981)', '#64748b') || '#64748b';
-  try {
-    await api('/api/groups', { method: 'POST', body: { name, color } });
-    loadGroups(); // Refresh groups in both desktop and mobile
-  } catch (err) {
-    alert('Create group failed: ' + (err?.message || err));
-    console.error(err);
-  }
-});
+// This functionality is now handled by the modal above
 
 function setFilter(f) {
   state.filter = f;
@@ -648,12 +699,82 @@ els.createNote?.addEventListener('click', async () => {
   }
 });
 
-// Add group
-els.addGroup?.addEventListener('click', async () => {
-  const name = prompt('Group name');
-  if (!name) return;
-  const color = prompt('Optional color hex (e.g., #10b981)', '#64748b') || '#64748b';
-  await api('/api/groups', { method: 'POST', body: { name, color } });
+// Group modal functionality
+function openGroupModal() {
+  els.addGroupModal?.classList.remove('hidden');
+  els.groupNameInput?.focus();
+}
+
+function closeGroupModal() {
+  els.addGroupModal?.classList.add('hidden');
+  els.groupNameInput.value = '';
+  // Reset color selection to default (blue)
+  const colorInputs = document.querySelectorAll('input[name="group-color"]');
+  colorInputs.forEach(input => {
+    input.checked = input.value === '#3b82f6';
+    const colorDiv = input.nextElementSibling;
+    if (input.checked) {
+      colorDiv.classList.add('border-slate-300', 'dark:border-slate-600');
+      colorDiv.classList.remove('border-transparent');
+    } else {
+      colorDiv.classList.remove('border-slate-300', 'dark:border-slate-600');
+      colorDiv.classList.add('border-transparent');
+    }
+  });
+}
+
+// Add group button event listeners
+els.addGroup?.addEventListener('click', openGroupModal);
+els.addGroupMobile?.addEventListener('click', openGroupModal);
+
+// Group modal event listeners
+$$('[data-close="group-modal"]').forEach(el => el.addEventListener('click', closeGroupModal));
+els.addGroupModal?.addEventListener('click', (e) => {
+  if (e.target === els.addGroupModal) closeGroupModal();
+});
+
+// Color selection handling
+document.addEventListener('change', (e) => {
+  if (e.target.name === 'group-color') {
+    const colorInputs = document.querySelectorAll('input[name="group-color"]');
+    colorInputs.forEach(input => {
+      const colorDiv = input.nextElementSibling;
+      if (input.checked) {
+        colorDiv.classList.add('border-slate-300', 'dark:border-slate-600');
+        colorDiv.classList.remove('border-transparent');
+      } else {
+        colorDiv.classList.remove('border-slate-300', 'dark:border-slate-600');
+        colorDiv.classList.add('border-transparent');
+      }
+    });
+  }
+});
+
+// Create group functionality
+els.createGroupBtn?.addEventListener('click', async () => {
+  const name = els.groupNameInput?.value.trim();
+  if (!name) {
+    alert('Please enter a group name');
+    return;
+  }
+  
+  const selectedColor = document.querySelector('input[name="group-color"]:checked')?.value || '#3b82f6';
+  
+  try {
+    await api('/api/groups', { method: 'POST', body: { name, color: selectedColor } });
+    closeGroupModal();
+    loadGroups();
+  } catch (err) {
+    alert('Create group failed: ' + (err?.message || err));
+    console.error(err);
+  }
+});
+
+// Enter key support for group name input
+els.groupNameInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    els.createGroupBtn?.click();
+  }
 });
 
 // Edit modal
