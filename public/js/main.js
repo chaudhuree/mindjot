@@ -7,6 +7,7 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const state = {
   groups: [],
   notes: [],
+  allNotes: [], // Store all notes for search filtering
   filter: 'all', // 'all' | 'ungrouped' | 'deleted' | <groupId>
   search: '',
   selected: new Set(),
@@ -449,10 +450,18 @@ async function loadNotes() {
     const { data } = await api(`/api/notes?${params.toString()}`);
     let notes = data || [];
     if (state.filter === 'ungrouped') notes = notes.filter(n => !n.groupId);
-    if (state.search) notes = notes.filter(n =>
-      (n.title || '').toLowerCase().includes(state.search) ||
-      (stripHtml(n.content || '')).toLowerCase().includes(state.search)
-    );
+    
+    // Store all notes for search filtering
+    state.allNotes = notes;
+    
+    // Apply search filter if there's a search term
+    if (state.search) {
+      notes = notes.filter(n =>
+        (n.title || '').toLowerCase().includes(state.search) ||
+        (stripHtml(n.content || '')).toLowerCase().includes(state.search)
+      );
+    }
+    
     state.notes = notes;
     renderNotes();
   } catch (e) {
@@ -729,13 +738,34 @@ async function batch(action) {
 // Search
 els.search?.addEventListener('input', (e) => {
   state.search = (e.target.value || '').trim().toLowerCase();
-  renderNotes();
+  // Apply search filter by re-filtering the current notes
+  applySearchFilter();
 });
 
-// Mobile search
+function applySearchFilter() {
+  if (!state.search) {
+    // If no search term, reload all notes for current filter
+    loadNotes();
+    return;
+  }
+  
+  // Filter current notes based on search term
+  const filteredNotes = state.allNotes ? state.allNotes.filter(n =>
+    (n.title || '').toLowerCase().includes(state.search) ||
+    (stripHtml(n.content || '')).toLowerCase().includes(state.search)
+  ) : [];
+  
+  state.notes = filteredNotes;
+  renderNotes();
+}
+
+// Mobile search (if mobile search input exists)
 els.searchMobile?.addEventListener('input', (e) => {
   state.search = (e.target.value || '').trim().toLowerCase();
-  renderNotes();
+  // Sync with desktop search input
+  if (els.search) els.search.value = e.target.value;
+  // Apply search filter by re-filtering the current notes
+  applySearchFilter();
 });
 
 // Create note
