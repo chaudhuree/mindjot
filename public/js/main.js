@@ -36,6 +36,15 @@ const els = {
   editGroup: $('#edit-group'),
   editEditor: $('#edit-editor'),
   editSave: $('#edit-save'),
+  // Mobile drawer elements
+  mobileDrawer: $('#mobile-drawer'),
+  drawerBackdrop: $('#drawer-backdrop'),
+  drawerPanel: $('#drawer-panel'),
+  closeDrawer: $('#close-drawer'),
+  searchMobile: $('#search-mobile'),
+  filtersMobile: $('#filters-mobile'),
+  addGroupMobile: $('#add-group-mobile'),
+  groupListMobile: $('#group-list-mobile'),
 };
 
 // Theme
@@ -57,9 +66,38 @@ function toggleTheme() {
 els.themeToggle?.addEventListener('click', toggleTheme);
 els.themeToggleM?.addEventListener('click', toggleTheme);
 
-els.mobileMenu?.addEventListener('click', () => {
-  els.sidebar?.classList.toggle('hidden');
-});
+// Mobile drawer functionality
+let isDrawerOpen = false;
+
+function openMobileDrawer() {
+  els.mobileDrawer.style.display = 'block';
+  setTimeout(() => {
+    els.drawerBackdrop?.classList.add('open');
+    els.drawerPanel?.classList.add('open');
+    isDrawerOpen = true;
+  }, 10);
+}
+
+function closeMobileDrawer() {
+  els.drawerBackdrop?.classList.remove('open');
+  els.drawerPanel?.classList.remove('open');
+  setTimeout(() => {
+    els.mobileDrawer.style.display = 'none';
+    isDrawerOpen = false;
+  }, 300);
+}
+
+function toggleMobileDrawer() {
+  if (isDrawerOpen) {
+    closeMobileDrawer();
+  } else {
+    openMobileDrawer();
+  }
+}
+
+els.mobileMenu?.addEventListener('click', toggleMobileDrawer);
+els.closeDrawer?.addEventListener('click', closeMobileDrawer);
+els.drawerBackdrop?.addEventListener('click', closeMobileDrawer);
 
 // Rich text controls
 $$('[data-cmd]').forEach(btn => {
@@ -171,17 +209,16 @@ async function loadGroups() {
 }
 
 function renderGroups() {
-  const wrap = els.groupList;
-  wrap.innerHTML = '';
-  state.groups.forEach(g => {
-    const btn = document.createElement('button');
-    btn.className = 'w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2';
-    const color = g.color || '#64748b';
-    btn.dataset.group = g._id;
-    btn.innerHTML = `<span class="h-2 w-2 rounded-full inline-block" style="background:${color}"></span><span>${escapeHtml(g.name)}</span>`;
-    btn.addEventListener('click', () => setFilter(g._id));
-    wrap.appendChild(btn);
-  });
+  const groupHTML = state.groups.map(g => 
+    `<button data-group="${g._id}" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2">
+      <div class="h-3 w-3 rounded-full" style="background:${g.color}"></div>
+      ${escapeHtml(g.name)}
+    </button>`
+  ).join('');
+  
+  if (els.groupList) els.groupList.innerHTML = groupHTML;
+  if (els.groupListMobile) els.groupListMobile.innerHTML = groupHTML;
+  fillGroupSelects();
 }
 
 function fillGroupSelects() {
@@ -199,15 +236,97 @@ els.filters?.addEventListener('click', (e) => {
   if (!btn) return;
   const g = btn.getAttribute('data-group');
   if (!g) return;
+  
+  // Update active state visually
+  els.filters.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  btn.classList.add('bg-slate-100', 'dark:bg-slate-800');
+  
   setFilter(g);
+});
+
+// Desktop group list
+els.groupList?.addEventListener('click', (e) => {
+  if (!(e.target instanceof HTMLElement)) return;
+  const btn = e.target.closest('button[data-group]');
+  if (!btn) return;
+  const g = btn.getAttribute('data-group');
+  if (!g) return;
+  
+  // Update active state visually
+  els.groupList.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  btn.classList.add('bg-slate-100', 'dark:bg-slate-800');
+  
+  setFilter(g);
+});
+
+// Mobile filters
+els.filtersMobile?.addEventListener('click', (e) => {
+  if (!(e.target instanceof HTMLElement)) return;
+  const btn = e.target.closest('button[data-group]');
+  if (!btn) return;
+  const g = btn.getAttribute('data-group');
+  if (!g) return;
+  
+  // Update active state visually
+  els.filtersMobile.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  btn.classList.add('bg-slate-100', 'dark:bg-slate-800');
+  
+  setFilter(g);
+  closeMobileDrawer();
+});
+
+// Mobile group list
+els.groupListMobile?.addEventListener('click', (e) => {
+  if (!(e.target instanceof HTMLElement)) return;
+  const btn = e.target.closest('button[data-group]');
+  if (!btn) return;
+  const g = btn.getAttribute('data-group');
+  if (!g) return;
+  
+  // Update active state visually
+  els.groupListMobile.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  btn.classList.add('bg-slate-100', 'dark:bg-slate-800');
+  
+  setFilter(g);
+  closeMobileDrawer();
+});
+
+// Mobile add group
+els.addGroupMobile?.addEventListener('click', async () => {
+  const name = prompt('Group name');
+  if (!name) return;
+  const color = prompt('Optional color hex (e.g., #10b981)', '#64748b') || '#64748b';
+  try {
+    await api('/api/groups', { method: 'POST', body: { name, color } });
+    loadGroups(); // Refresh groups in both desktop and mobile
+  } catch (err) {
+    alert('Create group failed: ' + (err?.message || err));
+    console.error(err);
+  }
 });
 
 function setFilter(f) {
   state.filter = f;
   state.selected.clear();
   els.selectAll.checked = false;
+  
+  // Update active states across both desktop and mobile
+  updateActiveFilterStates(f);
+  
   updateToolbar();
   loadNotes();
+}
+
+function updateActiveFilterStates(activeFilter) {
+  // Clear all active states first
+  els.filters?.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  els.filtersMobile?.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  els.groupList?.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  els.groupListMobile?.querySelectorAll('button').forEach(b => b.classList.remove('bg-slate-100', 'dark:bg-slate-800'));
+  
+  // Set active state for the current filter
+  const activeButtons = document.querySelectorAll(`button[data-group="${activeFilter}"]`);
+  activeButtons.forEach(btn => btn.classList.add('bg-slate-100', 'dark:bg-slate-800'));
 }
 
 // Notes
@@ -367,7 +486,9 @@ function renderNoteCard(note) {
     }
   });
   $('.btn-delete-perm', div)?.addEventListener('click', async (e) => {
-    if (!confirm('Permanently delete this note? This cannot be undone.')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // if (!confirm('Permanently delete this note? This cannot be undone.')) return;
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
@@ -413,17 +534,23 @@ function updateToolbar() {
     restoreBtn.disabled = !any;
     wrap.appendChild(restoreBtn);
     // Permanent delete
-    const deleteBtn = button('Delete Forever', async () => {
-      // if (!confirm('Permanently delete selected notes?')) return;
+    const deleteBtn = button('Delete Forever', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // if (!confirm('Permanently delete selected notes? This cannot be undone.')) return;
       await batch('permanent-delete');
     });
     deleteBtn.disabled = !any;
     wrap.appendChild(deleteBtn);
     // Empty recycle bin
-    const emptyBtn = button('Empty Recycle Bin', async () => {
-      if (!confirm('Empty recycle bin? This cannot be undone.')) return;
+    const emptyBtn = button('Empty Recycle Bin', async (e) => {
+      // console.log('Emptying recycle bin');
+      e.preventDefault();
+      e.stopPropagation();
+      // if (!confirm('Empty recycle bin? This cannot be undone.')) return;
       const ids = state.notes.map(n => idOf(n));
       if (ids.length) {
+        emptyBtn.disabled = true;
         try {
           await api('/api/notes/batch', { method: 'POST', body: { action: 'permanent-delete', ids } });
           const payload = { type: 'permanently-deleted-batch', ids };
@@ -433,7 +560,11 @@ function updateToolbar() {
         } catch (err) {
           alert('Empty recycle bin failed: ' + (err?.message || err));
           console.error(err);
+        } finally {
+          emptyBtn.disabled = false;
         }
+      } else {
+        alert('Recycle bin is already empty.');
       }
     });
     wrap.appendChild(emptyBtn);
@@ -464,21 +595,35 @@ function button(label, onClick) {
 
 async function batch(action) {
   const ids = Array.from(state.selected);
-  if (!ids.length) return;
+  if (!ids.length) {
+    alert('No notes selected.');
+    return;
+  }
+  
   try {
     await api('/api/notes/batch', { method: 'POST', body: { action, ids } });
+    const payload = { type: `${action}-batch`, ids };
+    console.log('emitting client:notes:changed', payload);
+    window.__emitNotesChanged?.(payload);
   } catch (err) {
     alert('Batch action failed: ' + (err?.message || err));
     console.error(err);
   } finally {
     state.selected.clear();
     els.selectAll.checked = false;
+    updateToolbar();
     loadNotes();
   }
 }
 
 // Search
 els.search?.addEventListener('input', (e) => {
+  state.search = (e.target.value || '').trim().toLowerCase();
+  renderNotes();
+});
+
+// Mobile search
+els.searchMobile?.addEventListener('input', (e) => {
   state.search = (e.target.value || '').trim().toLowerCase();
   renderNotes();
 });
