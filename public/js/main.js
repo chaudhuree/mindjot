@@ -77,7 +77,6 @@ $$('[data-editcmd]').forEach(btn => {
     els.editEditor.focus();
   });
 });
-
 // API helper
 async function api(path, opts = {}) {
   const hasBody = opts.body !== undefined && opts.body !== null;
@@ -92,15 +91,72 @@ async function api(path, opts = {}) {
 }
 
 // Socket
-const socket = io();
-socket.on('connect', () => console.log('socket connected'));
-socket.on('notes:changed', () => {
-  // Simplify: reload current list
-  loadNotes();
-});
-socket.on('groups:changed', () => {
-  loadGroups();
-});
+function connectSocket() {
+  if (!window.io) {
+    console.warn('socket.io client not yet loaded, retrying...');
+    setTimeout(connectSocket, 500);
+    return;
+  }
+  let socketConnected = false;
+  const socket = window.io({
+    path: '/socket.io',
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+  });
+  // expose globally for other handlers to emit
+  window.__socket = socket;
+  window.__emitNotesChanged = function(payload) {
+    try {
+      const p = payload || { type: 'client' };
+      if (socket.connected) {
+        console.log('emit now client:notes:changed', p);
+        socket.emit('client:notes:changed', p);
+      } else {
+        console.log('queue emit until connect', p);
+        socket.once('connect', () => {
+          console.log('connected; flushing queued emit', p);
+          socket.emit('client:notes:changed', p);
+        });
+      }
+    } catch (e) { console.warn('emit error', e); }
+  };
+  socket.on('connect', () => {
+    socketConnected = true;
+    console.log('socket connected');
+  });
+  socket.on('disconnect', (r) => {
+    socketConnected = false;
+    console.log('socket disconnected:', r);
+  });
+  socket.on('connect_error', (e) => console.warn('socket connect_error:', e?.message || e));
+  socket.on('reconnect', (n) => {
+    console.log('socket reconnected', n);
+    // On reconnection, reload to resync state
+    loadGroups();
+    loadNotes();
+  });
+  socket.on('notes:changed', (payload) => {
+    console.log('notes:changed received', payload);
+    // Simplify: reload current list
+    loadNotes();
+  });
+  socket.on('groups:changed', () => {
+    loadGroups();
+  });
+
+  // Polling fallback when socket is not connected
+  setInterval(() => {
+    if (!socketConnected) {
+      loadNotes();
+      // groups rarely change; refresh occasionally
+      if (Math.random() < 0.25) loadGroups();
+    }
+  }, 8000);
+}
+
+connectSocket();
 
 // Groups
 async function loadGroups() {
@@ -242,6 +298,9 @@ function renderNoteCard(note) {
     btn.disabled = true;
     try {
       await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { isDone: !isDone } });
+      const payload1 = { type: 'updated', id: idOf(note) };
+      console.log('emitting client:notes:changed', payload1);
+      window.__emitNotesChanged?.(payload1);
       loadNotes();
     } catch (err) {
       const msg = String(err?.message || err);
@@ -260,8 +319,12 @@ function renderNoteCard(note) {
   $('.btn-delete', div)?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
+    console.log("Deleting note", note);
     try {
       await api(`/api/notes/${idOf(note)}`, { method: 'DELETE' });
+      const payload2 = { type: 'soft-deleted', id: idOf(note) };
+      console.log('emitting client:notes:changed', payload2);
+      window.__emitNotesChanged?.(payload2);
       loadNotes();
     } catch (err) {
       const msg = String(err?.message || err);
@@ -281,6 +344,9 @@ function renderNoteCard(note) {
     btn.disabled = true;
     try {
       await api(`/api/notes/${idOf(note)}/restore`, { method: 'POST' });
+      const payload3 = { type: 'restored', id: idOf(note) };
+      console.log('emitting client:notes:changed', payload3);
+      window.__emitNotesChanged?.(payload3);
       loadNotes();
     } catch (err) {
       const msg = String(err?.message || err);
@@ -301,6 +367,9 @@ function renderNoteCard(note) {
     btn.disabled = true;
     try {
       await api(`/api/notes/${idOf(note)}/permanent`, { method: 'DELETE' });
+      const payload4 = { type: 'permanently-deleted', id: idOf(note) };
+      console.log('emitting client:notes:changed', payload4);
+      window.__emitNotesChanged?.(payload4);
       loadNotes();
     } catch (err) {
       const msg = String(err?.message || err);
@@ -407,6 +476,9 @@ els.createNote?.addEventListener('click', async () => {
     await api('/api/notes', { method: 'POST', body: { title, content, groupId } });
     els.noteTitle.value = '';
     els.editor.innerHTML = '';
+    const payload5 = { type: 'created' };
+    console.log('emitting client:notes:changed', payload5);
+    window.__emitNotesChanged?.(payload5);
     loadNotes();
   } catch (err) {
     alert('Create note failed: ' + (err?.message || err));
@@ -436,6 +508,9 @@ function openEditModal(note) {
     try {
       await api(`/api/notes/${idOf(note)}`, { method: 'PATCH', body: { title, content, groupId } });
       closeEditModal();
+      const payload6 = { type: 'updated', id: idOf(note) };
+      console.log('emitting client:notes:changed', payload6);
+      window.__emitNotesChanged?.(payload6);
       loadNotes();
     } catch (err) {
       alert('Save failed: ' + (err?.message || err));

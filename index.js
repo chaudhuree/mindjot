@@ -52,6 +52,16 @@ const build = async () => {
   const serializeNote = (n) => ({ ...n, _id: toId(n._id), groupId: toId(n.groupId) });
   const serializeGroup = (g) => ({ ...g, _id: toId(g._id) });
 
+  // Build an _id filter that matches both ObjectId and string _id
+  function idFilter(id) {
+    try {
+      const oid = new app.mongo.ObjectId(id);
+      return { $or: [{ _id: oid }, { _id: id }] };
+    } catch {
+      return { _id: id };
+    }
+  }
+
   // Socket events will be configured after listen
 
   // Ensure indexes
@@ -174,39 +184,44 @@ const build = async () => {
 
   app.patch('/api/notes/:id', async (req, reply) => {
     const { notes } = getCollections();
-    const { id } = req.params;
-    const { ObjectId } = app.mongo;
+    const id = String(req.params.id || '').trim();
     const { title, content, isDone, groupId } = req.body || {};
     const update = {};
     if (title !== undefined) update.title = title;
     if (content !== undefined) update.content = content;
     if (isDone !== undefined) update.isDone = !!isDone;
     if (groupId !== undefined) {
-      update.groupId = groupId ? (() => { try { return new ObjectId(groupId); } catch { return null; } })() : null;
+      update.groupId = groupId ? (() => { try { return new app.mongo.ObjectId(groupId); } catch { return null; } })() : null;
     }
     if (!Object.keys(update).length) return reply.code(400).send({ ok: false, message: 'no fields' });
     update.updatedAt = new Date();
-    const res = await notes.findOneAndUpdate({ _id: new ObjectId(id) }, { $set: update }, { returnDocument: 'after' });
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
-    const sn = serializeNote(res.value);
-    app.io.emit('notes:changed', { type: 'updated', note: sn });
+    const exists = await notes.findOne(idFilter(id));
+    if (!exists) {
+      app.log.info({ id }, 'PATCH note not found on pre-check');
+      return reply.code(404).send({ ok: false, message: 'note not found' });
+    }
+    const res = await notes.findOneAndUpdate({ _id: exists._id }, { $set: update }, { returnDocument: 'after' });
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
+    const sn = serializeNote(res);
+    app.io?.emit('notes:changed', { type: 'updated', note: sn });
     return { ok: true, data: sn };
   });
 
   // Soft delete
   app.delete('/api/notes/:id', async (req, reply) => {
     const { notes } = getCollections();
-    const { id } = req.params;
-    const { ObjectId } = app.mongo;
+    const id = String(req.params.id || '').trim();
     const now = new Date();
-    let oid;
-    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
+    const exists = await notes.findOne(idFilter(id));
+    if (!exists) {
+      return reply.code(404).send({ ok: false, message: 'note not found' });
+    }
     const res = await notes.findOneAndUpdate(
-      { _id: oid },
+      { _id: exists._id },
       { $set: { isDeleted: true, deletedAt: now, updatedAt: now } },
       { returnDocument: 'after' }
     );
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
     app.io?.emit('notes:changed', { type: 'soft-deleted', id });
     return { ok: true };
   });
@@ -214,17 +229,19 @@ const build = async () => {
   // Restore
   app.post('/api/notes/:id/restore', async (req, reply) => {
     const { notes } = getCollections();
-    const { id } = req.params;
-    const { ObjectId } = app.mongo;
-    let oid;
-    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
+    const id = String(req.params.id || '').trim();
+    const exists = await notes.findOne(idFilter(id));
+    if (!exists) {
+      app.log.info({ id }, 'RESTORE note not found on pre-check');
+      return reply.code(404).send({ ok: false, message: 'note not found' });
+    }
     const res = await notes.findOneAndUpdate(
-      { _id: oid },
+      { _id: exists._id },
       { $set: { isDeleted: false, deletedAt: null, updatedAt: new Date() } },
       { returnDocument: 'after' }
     );
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
-    const sn = serializeNote(res.value);
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
+    const sn = serializeNote(res);
     app.io?.emit('notes:changed', { type: 'restored', note: sn });
     return { ok: true };
   });
@@ -232,12 +249,14 @@ const build = async () => {
   // Permanent delete
   app.delete('/api/notes/:id/permanent', async (req, reply) => {
     const { notes } = getCollections();
-    const { id } = req.params;
-    const { ObjectId } = app.mongo;
-    let oid;
-    try { oid = new ObjectId(id); } catch { return reply.code(400).send({ ok: false, message: 'invalid id' }); }
-    const res = await notes.findOneAndDelete({ _id: oid });
-    if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
+    const id = String(req.params.id || '').trim();
+    const exists = await notes.findOne(idFilter(id));
+    if (!exists) {
+      app.log.info({ id }, 'PERMANENT DELETE note not found on pre-check');
+      return reply.code(404).send({ ok: false, message: 'note not found' });
+    }
+    const res = await notes.findOneAndDelete({ _id: exists._id });
+    // if (!res.value) return reply.code(404).send({ ok: false, message: 'note not found' });
     app.io?.emit('notes:changed', { type: 'permanently-deleted', id });
     return { ok: true };
   });
@@ -286,11 +305,39 @@ const build = async () => {
 
   // Attach Socket.IO directly to Fastify's underlying server
   const io = new SocketIOServer(app.server, {
-    cors: { origin: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] },
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+      credentials: true,
+    },
+    path: '/socket.io',
   });
   app.io = io;
   io.on('connection', (socket) => {
     app.log.info('Socket connected: ' + socket.id);
+    // Debug: log all incoming events
+    socket.onAny((event, ...args) => {
+      try {
+        app.log.info({ event, argsCount: args.length }, 'socket event received');
+      } catch {}
+    });
+    // Relay client change notifications to others
+    socket.on('client:notes:changed', (payload) => {
+      try {
+        app.log.info('Relaying notes:changed to others');
+        socket.broadcast.emit('notes:changed', payload || { type: 'client' });
+      } catch (e) {
+        app.log.warn({ err: e }, 'relay notes:changed failed');
+      }
+    });
+    socket.on('client:groups:changed', (payload) => {
+      try {
+        app.log.info('Relaying groups:changed to others');
+        socket.broadcast.emit('groups:changed', payload || { type: 'client' });
+      } catch (e) {
+        app.log.warn({ err: e }, 'relay groups:changed failed');
+      }
+    });
   });
 
   return app;
