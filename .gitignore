@@ -20,3 +20,4 @@ pids
 # Editor
 .vscode/
 .DS_Store
+app

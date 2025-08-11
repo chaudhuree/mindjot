@@ -8,6 +8,24 @@ const { Server: SocketIOServer } = require('socket.io');
 
 const build = async () => {
   const app = Fastify({ logger: true });
+  await app.register(require('@fastify/cors'), {
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:8080', 
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:8080',
+      'https://localhost:3000',
+      'https://localhost:8080',
+      // Add your Flutter web development URLs
+      /^http:\/\/localhost:\d+$/,
+      /^https:\/\/localhost:\d+$/,
+      // Add your production domains if needed
+      'https://mindjot.code-commando.com'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+  });
 
   // MongoDB
   const mongoUrl = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/notes_app';
