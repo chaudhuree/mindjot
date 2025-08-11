@@ -14,6 +14,15 @@ const build = async () => {
   await app.register(fastifyMongo, {
     forceClose: true,
     url: mongoUrl,
+    // Connection timeout and pool settings
+    connectTimeoutMS: 10000, // 10 seconds instead of 30
+    serverSelectionTimeoutMS: 5000, // 5 seconds
+    socketTimeoutMS: 45000, // 45 seconds
+    maxPoolSize: 10, // Maximum number of connections
+    minPoolSize: 2, // Minimum number of connections
+    maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+    retryWrites: true, // Retry failed writes
+    retryReads: true, // Retry failed reads
   });
 
   // Views
